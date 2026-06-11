@@ -311,7 +311,7 @@ function App() {
 
         <div className="content">
           {view.page === "home" && <Home groups={groups} actions={actions} tps={tps} g={g} onOpen={openProfile} />}
-          {view.page === "profile" && <Profile gk={view.key} g={g} contacts={contacts} tps={tps} actions={actions} notes={notes}
+          {view.page === "profile" && <Profile gk={view.key} g={g} groups={groups} contacts={contacts} tps={tps} actions={actions} notes={notes}
             onOpen={openProfile} onLogTp={() => { setTpPrefill(null); setShowTpForm(true); }}
             onAddNote={(b, tokens) => { setNotes([{ id: Date.now(), on: view.key, body: b, tokens: tokens || [], author: ME, date: today, convertedTo: null }, ...notes]); ping("Quick note added"); }}
             onConvertNote={(n) => { setTpPrefill({ summary: n.body, date: n.date, fromNoteId: n.id }); setShowTpForm(true); }}
@@ -408,7 +408,7 @@ function GroupList({ type, groups, actions, tps, g, onOpen }) {
 }
 
 /* ---------------- profile (the hub) ---------------- */
-function Profile({ gk, g, contacts, tps, actions, notes, onOpen, onAddNote, onCompleteAction, onToggleKey, onAddContact, onLogTp, onConvertNote }) {
+function Profile({ gk, g, groups, contacts, tps, actions, notes, onOpen, onAddNote, onCompleteAction, onToggleKey, onAddContact, onLogTp, onConvertNote }) {
   const grp = g(gk);
   const [tab, setTab] = useState("touchpoints");
   const [feedFilter, setFeedFilter] = useState("all"); // all | key
@@ -526,7 +526,7 @@ function Profile({ gk, g, contacts, tps, actions, notes, onOpen, onAddNote, onCo
       )}
 
       {tab === "quick notes" && (
-        <QuickNotes notes={myNotes} contacts={contacts.filter((c) => c.org === gk)} g={g}
+        <QuickNotes notes={myNotes} contacts={contacts.filter((c) => c.org === gk)} groups={groups} g={g}
           onAdd={onAddNote} onConvert={onConvertNote} />
       )}
 
@@ -550,7 +550,7 @@ function Profile({ gk, g, contacts, tps, actions, notes, onOpen, onAddNote, onCo
    Capture lane: zero required structure. @ mentions (contacts, colleagues,
    clients/brokers) and # topic tags are inline-only. "Convert to touchpoint"
    is an offer, never a prompt — general notes are complete records as-is. */
-function QuickNotes({ notes, contacts, g, onAdd, onConvert }) {
+function QuickNotes({ notes, contacts, groups, g, onAdd, onConvert }) {
   const [text, setText] = useState("");
   const [picked, setPicked] = useState([]);
   const [hl, setHl] = useState(0);
@@ -561,12 +561,16 @@ function QuickNotes({ notes, contacts, g, onAdd, onConvert }) {
   const partial = m ? m[2].toLowerCase() : "";
   let suggestions = [];
   if (trigger === "#") {
-    suggestions = TOPICS.filter((t) => t.toLowerCase().startsWith(partial)).slice(0, 5).map((t) => ({ label: t, insert: "#" + t }));
+    suggestions = TOPICS.filter((t) => t.toLowerCase().startsWith(partial)).slice(0, 5).map((t) => ({ label: t, insert: "#" + t, kind: "topic" }));
   } else if (trigger === "@") {
-    const people = contacts.map((c) => ({ label: `${c.name} (contact)`, insert: "@" + c.name }));
-    const staff = DIRECTORY.map((u) => ({ label: `${u.label} (colleague)`, insert: "@" + u.label }));
-    suggestions = [...people, ...staff]
-      .filter((s) => s.label.toLowerCase().includes(partial)).slice(0, 5);
+    const people = contacts.map((c) => ({ label: c.name, insert: "@" + c.name, kind: "contact", match: c.name.toLowerCase() }));
+    const entities = (groups || []).map((x) => ({
+      label: x.display, insert: "@" + x.display, kind: x.type + (x.origin === "Prospect" ? " · prospect" : ""),
+      match: (x.display + " " + x.aliases.join(" ")).toLowerCase()   // aliases match too: "@GC" finds the broker
+    }));
+    const staff = DIRECTORY.map((u) => ({ label: u.label, insert: "@" + u.label, kind: "colleague", match: u.label.toLowerCase() }));
+    suggestions = [...people, ...entities, ...staff]
+      .filter((s) => s.match.includes(partial)).slice(0, 6);
   }
 
   const pick = (s) => {
@@ -616,7 +620,7 @@ function QuickNotes({ notes, contacts, g, onAdd, onConvert }) {
                 <div key={s.insert + i} className={`ta-row ${i === hl ? "hl" : ""}`}
                   onMouseEnter={() => setHl(i)} onClick={() => pick(s)}>
                   <span style={{ fontWeight: 600 }}>{s.insert}</span>
-                  <span className="mono">{s.label.includes("(") ? s.label.match(/\((.*)\)/)[1] : "topic"}</span>
+                  <span className="mono">{s.kind}</span>
                 </div>
               ))}
             </div>
