@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reinsurance CRM — POC</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>body { margin: 0; }</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo } = React;
+
+/* ------------------------------------------------------------------
+   Reinsurance CRM — v1 UI prototype
+   Built to PRD Rev. D: group-level entities only, prospect support,
+   fast touchpoint entry, optional actions, Power BI placeholder.
+   All data is in-memory sample data.
+------------------------------------------------------------------- */
+
+const css = `
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  --ink: #1B2A41;
+  --ink-soft: #44546B;
+  --paper: #FAF9F6;
+  --card: #FFFFFF;
+  --line: #E4E2DA;
+  --line-soft: #EFEDE6;
+  --accent: #8C2F28;        /* oxblood — used sparingly */
+  --accent-soft: #F6E9E7;
+  --prospect: #9A6B15;
+  --prospect-bg: #FBF3E2;
+  --ok: #2F6B4F;
+  --ok-bg: #E8F2EC;
+  --mono: 'IBM Plex Mono', monospace;
+  --display: 'Fraunces', serif;
+  --body: 'Public Sans', system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+.app { font-family: var(--body); color: var(--ink); background: var(--paper); min-height: 100vh; display: flex; font-size: 14px; }
+.app ::selection { background: var(--accent-soft); }
+
+/* ---- left rail ---- */
+.rail { width: 216px; background: var(--ink); color: #E9ECF2; padding: 20px 14px; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.rail-brand { font-family: var(--display); font-size: 19px; font-weight: 600; letter-spacing: 0.2px; padding: 2px 10px 18px; color: #fff; }
+.rail-brand span { color: #C9A86A; }
+.rail-sec { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #8E9AAD; padding: 14px 10px 6px; }
+.rail-btn { text-align: left; background: none; border: 0; color: #C9D2DF; padding: 8px 10px; border-radius: 7px; cursor: pointer; font: inherit; font-weight: 500; width: 100%; display:flex; justify-content: space-between; align-items:center; }
+.rail-btn:hover { background: rgba(255,255,255,0.07); color: #fff; }
+.rail-btn.on { background: rgba(255,255,255,0.12); color: #fff; }
+.rail-count { font-family: var(--mono); font-size: 11px; color: #8E9AAD; }
+.rail-foot { margin-top: auto; font-size: 11px; color: #74819A; padding: 10px; border-top: 1px solid rgba(255,255,255,0.08); line-height: 1.5; }
+
+/* ---- main ---- */
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar { display: flex; align-items: center; gap: 14px; padding: 14px 28px; border-bottom: 1px solid var(--line); background: var(--card); position: sticky; top: 0; z-index: 5; }
+.search { flex: 1; max-width: 460px; position: relative; }
+.search input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: inherit; background: var(--paper); outline: none; }
+.search input:focus { border-color: var(--ink-soft); background:#fff; }
+.search-pop { position:absolute; top: 40px; left:0; right:0; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow: 0 10px 28px rgba(27,42,65,0.13); overflow:hidden; z-index: 30; }
+.search-row { padding: 9px 12px; display:flex; align-items:center; gap:10px; cursor:pointer; }
+.search-row:hover { background: var(--paper); }
+.search-hint { font-size: 11px; color: var(--ink-soft); padding: 7px 12px; border-top: 1px solid var(--line-soft); background: var(--paper); }
+.btn { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 7px 13px; font: inherit; font-weight: 600; cursor: pointer; color: var(--ink); }
+.btn:hover { border-color: var(--ink-soft); }
+.btn.primary { background: var(--ink); border-color: var(--ink); color: #fff; }
+.btn.primary:hover { background: #24364F; }
+.btn.sm { padding: 4px 10px; font-size: 12.5px; font-weight: 500; }
+.content { padding: 26px 28px 60px; max-width: 1060px; width: 100%; }
+
+/* ---- typography & badges ---- */
+.h1 { font-family: var(--display); font-size: 26px; font-weight: 600; margin: 0; }
+.eyebrow { font-size: 10.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-soft); font-weight: 600; }
+.mono { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+.badge { display:inline-flex; align-items:center; font-size: 11px; font-weight: 600; border-radius: 99px; padding: 2px 9px; letter-spacing: 0.02em; }
+.badge.prospect { background: var(--prospect-bg); color: var(--prospect); border: 1px solid #E8D5A8; }
+.badge.synced { background: var(--ok-bg); color: var(--ok); }
+.badge.status { background: var(--line-soft); color: var(--ink-soft); }
+.badge.overdue { background: var(--accent-soft); color: var(--accent); }
+.chip { font-size: 11.5px; background: var(--line-soft); border-radius: 6px; padding: 2px 8px; color: var(--ink-soft); }
+
+/* ---- cards & tables ---- */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.card-h { display:flex; align-items:center; justify-content:space-between; padding: 13px 18px; border-bottom: 1px solid var(--line-soft); }
+.card-t { font-weight: 700; font-size: 13.5px; }
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl th { text-align:left; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); padding: 10px 18px; border-bottom: 1px solid var(--line-soft); font-weight: 600; }
+.tbl td { padding: 11px 18px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl tr.click { cursor: pointer; }
+.tbl tr.click:hover td { background: var(--paper); }
+.linkish { color: var(--ink); font-weight: 600; cursor: pointer; }
+.linkish:hover { text-decoration: underline; }
+
+/* ---- profile header: the "slip" ---- */
+.slip { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--ink); border-radius: 12px; padding: 20px 22px; }
+.slip.prospect { border-left-color: var(--prospect); }
+.slip-grid { display:grid; grid-template-columns: repeat(4, minmax(120px,1fr)); gap: 14px 22px; margin-top: 16px; }
+.slip-k { font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); font-weight:600; margin-bottom: 3px; }
+.slip-v { font-weight: 600; font-size: 13.5px; }
+
+/* ---- touchpoint feed ---- */
+.tp { display: flex; gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--line-soft); }
+.tp:last-child { border-bottom: 0; }
+.tp-rail { width: 3px; border-radius: 2px; background: var(--line); flex-shrink: 0; }
+.tp-rail.renewal { background: var(--accent); }
+.tp-rail.exec { background: #C9A86A; }
+.tp-type { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
+.tp-sub { font-weight: 600; margin: 2px 0 4px; }
+.tp-body { color: var(--ink-soft); line-height: 1.5; }
+.tp-meta { display:flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.star { border:0; background:none; cursor:pointer; font-size:17px; line-height:1; color:#C8C4B8; padding:2px 4px; flex-shrink:0; }
+.star.on { color:#C9A86A; }
+.star:hover { color:#C9A86A; }
+.feed-filter { display:flex; gap:6px; align-items:center; }
+.feed-filter button { border:1px solid var(--line); background:#fff; border-radius:99px; padding:4px 11px; font:inherit; font-size:12px; cursor:pointer; color:var(--ink-soft); }
+.feed-filter button.on { background:var(--ink); border-color:var(--ink); color:#fff; }
+
+/* ---- tabs ---- */
+.tabs { display:flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 22px 0 18px; }
+.tab { border: 0; background: none; font: inherit; font-weight: 600; color: var(--ink-soft); padding: 9px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab.on { color: var(--ink); border-bottom-color: var(--accent); }
+
+/* ---- modal / form ---- */
+.scrim { position: fixed; inset: 0; background: rgba(27,42,65,0.45); display:flex; align-items:flex-start; justify-content:center; padding: 7vh 16px; z-index: 50; }
+.modal { background: #fff; border-radius: 14px; width: 600px; max-width: 100%; max-height: 86vh; overflow:auto; box-shadow: 0 24px 60px rgba(27,42,65,0.3); }
+.modal-h { padding: 18px 22px 0; }
+.modal-b { padding: 16px 22px 22px; display:flex; flex-direction:column; gap: 14px; }
+.f-row { display:flex; gap: 12px; }
+.f { flex:1; display:flex; flex-direction:column; gap: 5px; }
+.f label { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-soft); font-weight: 700; }
+.f label .opt { color: #A6ADB9; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.f input, .f select, .f textarea { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; outline: none; background: #fff; }
+.f input:focus, .f select:focus, .f textarea:focus { border-color: var(--ink-soft); }
+.seg { display:flex; flex-wrap:wrap; gap: 6px; }
+.seg button { border:1px solid var(--line); background:#fff; border-radius: 99px; padding: 5px 12px; font: inherit; font-size: 12.5px; cursor:pointer; color: var(--ink-soft); }
+.seg button.on { background: var(--ink); border-color: var(--ink); color:#fff; }
+.note-banner { background: var(--paper); border: 1px dashed var(--line); border-radius: 8px; padding: 9px 12px; font-size: 12px; color: var(--ink-soft); }
+
+/* ---- @typeahead ---- */
+.ta { position: relative; }
+.ta-selected { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px; }
+.ta-chip { display:inline-flex; align-items:center; gap:6px; background: var(--ink); color:#fff; border-radius:99px; padding:4px 6px 4px 11px; font-size:12.5px; font-weight:600; }
+.ta-chip button { border:0; background:rgba(255,255,255,0.18); color:#fff; border-radius:99px; width:17px; height:17px; line-height:15px; cursor:pointer; font-size:12px; padding:0; }
+.ta-pop { position:absolute; top:calc(100% + 4px); left:0; right:0; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 10px 28px rgba(27,42,65,0.13); overflow:hidden; z-index:40; }
+.ta-row { padding:8px 12px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
+.ta-row:hover, .ta-row.hl { background: var(--paper); }
+.ta-row .mono { font-size:11px; }
+
+/* ---- PBI placeholder ---- */
+.pbi { border: 1px dashed var(--line); border-radius: 12px; background: repeating-linear-gradient(45deg, #fff, #fff 12px, #FBFAF7 12px, #FBFAF7 24px); padding: 34px; text-align: center; color: var(--ink-soft); }
+.pbi b { color: var(--ink); }
+.pbi .mono { display:block; margin-top: 8px; }
+
+.empty { padding: 26px 18px; text-align:center; color: var(--ink-soft); font-size: 13px; }
+.toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--ink); color:#fff; padding: 10px 18px; border-radius: 10px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,0.25); z-index: 60; }
+@media (max-width: 860px){ .rail{display:none;} .slip-grid{grid-template-columns:repeat(2,1fr);} }
+`;
+
+/* ---------------- sample data (fictional) ---------------- */
+
+const seedGroups = [
+  { key: "CG-104", origin: "Synced", type: "client", system: "ALPINE NATL INS GRP CONSOLIDATED", display: "Alpine National", aliases: ["ANIG", "Alpine"], region: "North America", segment: "Global", lead: "S. Verma", relStatus: "Active", brokers: ["BG-021", "BG-007"] },
+  { key: "CG-219", origin: "Synced", type: "client", system: "MERIDIAN MUTUAL HOLDINGS GROUP", display: "Meridian Mutual", aliases: ["MMH"], region: "Continental Europe", segment: "Large National", lead: "J. Okafor", relStatus: "Active", brokers: ["BG-021"] },
+  { key: "CG-388", origin: "Synced", type: "client", system: "PACIFICA SEGUROS GROUP SA CONS", display: "Pacífica Seguros", aliases: ["Pacifica"], region: "LatAm", segment: "Regional", lead: "S. Verma", relStatus: "Dormant", brokers: ["BG-007"] },
+  { key: "P-0007", origin: "Prospect", type: "client", system: "—", display: "Korin Specialty", aliases: ["Korin"], region: "UK", segment: "Specialty", lead: "M. Chen", relStatus: "Prospect", brokers: ["BG-014"] },
+  { key: "BG-021", origin: "Synced", type: "broker", system: "CALDER RE BROKING INTL GROUP", display: "Calder Re", aliases: ["Calder"], region: "Global" },
+  { key: "BG-007", origin: "Synced", type: "broker", system: "NORTHGATE BROKING GROUP LTD", display: "Northgate", aliases: ["NG Broking"], region: "Global" },
+  { key: "BG-014", origin: "Prospect", type: "broker", system: "—", display: "Atlas Re Partners", aliases: ["Atlas"], region: "UK" },
+];
+
+const seedContacts = [
+  { id: 1, name: "Elena Marchetti", org: "CG-104", title: "Head of Ceded Reinsurance", role: "Buyer", keyBuyer: true, notes: "Final say on panel composition. Prefers structure options in writing before meetings.", status: "Active" },
+  { id: 2, name: "David Strauss", org: "CG-104", title: "Group CFO", role: "CFO", keyBuyer: true, notes: "Engaged on retention strategy; interested in casualty reserve trends.", status: "Active" },
+  { id: 3, name: "Priya Nair", org: "BG-021", title: "Account Executive — Alpine", role: "Broker – Account Exec", keyBuyer: false, notes: "", status: "Active" },
+  { id: 4, name: "Tomas Lindqvist", org: "CG-219", title: "Chief Underwriting Officer", role: "CUO", keyBuyer: true, notes: "", status: "Active" },
+  { id: 5, name: "Rachel Adeyemi", org: "P-0007", title: "CEO", role: "CEO", keyBuyer: true, notes: "Founder-led — makes the reinsurance call herself for now.", status: "Active" },
+  { id: 6, name: "Marco Severin", org: "CG-104", title: "Head of Claims", role: "Claims", keyBuyer: false, notes: "", status: "Active" },
+  { id: 7, name: "Ingrid Halvorsen", org: "CG-104", title: "Chief Actuary", role: "Actuary", keyBuyer: false, notes: "", status: "Active" },
+];
+
+const seedTouchpoints = [
+  { id: 1, key: true, type: "Renewal discussion", date: "2026-06-04", client: "CG-104", broker: "BG-021", lob: ["Property Cat"], progRef: "Property Cat XL 2027", subject: "1/1 early renewal positioning", summary: "Elena signalled appetite to restructure the cat program — considering dropping the lowest layer and buying more top-end. Calder to circulate revised structure ideas before September. Pricing expectations anchored to flat risk-adjusted.", external: [1, 3], internal: ["S. Verma", "K. Brandt"], topics: ["Renewal strategy", "Capacity"], regions: ["North America"], author: "S. Verma" },
+  { id: 2, key: true, type: "Executive interaction", date: "2026-05-22", client: "CG-104", broker: null, lob: [], progRef: "", subject: "CFO dinner — Monte Carlo pre-meet", summary: "David confirmed group-level retention review underway; outcome lands before RVS. Wants our view on casualty reserve trends — share OLO development analysis.", external: [2], internal: ["S. Verma"], topics: ["Casualty trends"], regions: ["North America"], author: "S. Verma" },
+  { id: 3, key: false, type: "Meeting", date: "2026-05-28", client: "CG-219", broker: "BG-021", lob: ["Casualty"], progRef: "Casualty QS", subject: "Casualty quota share — claims review", summary: "Walked through cedent loss triangles with Tomas. Social inflation impact on 2019–21 years acknowledged; ceding commission discussion deferred to renewal.", external: [4], internal: ["J. Okafor"], topics: ["Claims", "Pricing"], regions: ["Continental Europe"], author: "J. Okafor" },
+  { id: 4, key: false, type: "Call", date: "2026-06-02", client: "P-0007", broker: "BG-014", lob: ["Cyber"], progRef: "", subject: "Intro call — cyber program 2027 target", summary: "Korin building first reinsurance program for 1/1/27 launch. Atlas leading placement. Strong interest in our cyber capacity; NDA to follow.", external: [5], internal: ["M. Chen"], topics: ["New business"], regions: ["UK"], author: "M. Chen" },
+];
+
+const seedActions = [
+  { id: 1, desc: "Send OLO adverse development summary to David Strauss", owner: "S. Verma", due: "2026-06-12", priority: "High", status: "Open", client: "CG-104", tp: 2 },
+  { id: 2, desc: "Review Calder's revised cat structure ideas", owner: "K. Brandt", due: "2026-09-05", priority: "Medium", status: "Open", client: "CG-104", tp: 1 },
+  { id: 3, desc: "Ceding commission benchmark for Meridian casualty QS", owner: "J. Okafor", due: "2026-06-05", priority: "Medium", status: "Open", client: "CG-219", tp: 3 },
+  { id: 4, desc: "Circulate NDA to Korin Specialty", owner: "M. Chen", due: null, priority: "Medium", status: "Open", client: "P-0007", tp: 4 },
+];
+
+const seedNotes = [
+  { id: 1, on: "CG-104", body: "Group strategy: consolidating panel to fewer, larger partners over next two renewals — strong opportunity to grow signed lines. @Calder Re aligned.", author: "S. Verma", date: "2026-05-23" },
+];
+
+const TP_TYPES = ["Meeting", "Call", "Email", "Event", "Renewal discussion", "Executive interaction"];
+const LOBS = ["Property Cat", "Property Non-Cat", "Casualty", "Specialty", "Marine", "Cyber", "Credit"];
+const TOPICS = ["Renewal strategy", "Capacity", "Pricing", "Claims", "Cat exposure", "Cyber", "Casualty trends", "New business"];
+const ME = "S. Verma";
+/* Internal user directory — synced nightly from Entra ID / Active Directory,
+   filtered to client-facing groups. Also powers Client Lead and Action Owner pickers.
+   Typeahead matches last name, first name, or initials. */
+const DIRECTORY = [
+  { name: "S. Verma",   label: "Verma, Sunita" },
+  { name: "K. Brandt",  label: "Brandt, Klaus" },
+  { name: "J. Okafor",  label: "Okafor, Jide" },
+  { name: "M. Chen",    label: "Chen, Mei" },
+  { name: "A. Fontaine",label: "Fontaine, Amélie" },
+  { name: "R. Tanaka",  label: "Tanaka, Ryo" },
+  { name: "L. Petrov",  label: "Petrov, Lena" },
+  { name: "D. Whitfield",label: "Whitfield, Daniel" },
+];
+const ROLE_ORDER = ["Buyer", "CUO", "CFO", "CEO", "Broker – Account Exec", "Broker – Placement", "Actuary", "Claims", "Other"];
+
+/* ---------------- helpers ---------------- */
+const fmt = (d) => d ? new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "No due date";
+const today = "2026-06-09";
+
+function App() {
+  const [groups, setGroups] = useState(seedGroups);
+  const [contacts, setContacts] = useState(seedContacts);
+  const [tps, setTps] = useState(seedTouchpoints);
+  const [actions, setActions] = useState(seedActions);
+  const [notes, setNotes] = useState(seedNotes);
+
+  const [view, setView] = useState({ page: "home", key: null });
+  const [q, setQ] = useState("");
+  const [showTpForm, setShowTpForm] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const g = (key) => groups.find((x) => x.key === key);
+  const ping = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
+
+  const hits = useMemo(() => {
+    if (!q.trim()) return [];
+    const s = q.toLowerCase();
+    return groups.filter((x) =>
+      x.display.toLowerCase().includes(s) ||
+      x.system.toLowerCase().includes(s) ||
+      x.aliases.some((a) => a.toLowerCase().includes(s))
+    ).slice(0, 6);
+  }, [q, groups]);
+
+  const openProfile = (key) => { setView({ page: "profile", key }); setQ(""); };
+
+  const myOpen = actions.filter((a) => a.owner === ME && a.status === "Open").length;
+
+  return (
+    <div className="app">
+      <style>{css}</style>
+
+      {/* ------- left rail ------- */}
+      <nav className="rail">
+        <div className="rail-brand">Cedar<span>·</span>Re CRM</div>
+        <div className="rail-sec">Relationships</div>
+        <button className={`rail-btn ${view.page === "home" ? "on" : ""}`} onClick={() => setView({ page: "home" })}>
+          Clients &amp; brokers <span className="rail-count">{groups.length}</span>
+        </button>
+        <div className="rail-sec">Workspace</div>
+        <button className={`rail-btn ${view.page === "actions" ? "on" : ""}`} onClick={() => setView({ page: "actions" })}>
+          My actions <span className="rail-count">{myOpen}</span>
+        </button>
+        <button className="rail-btn" onClick={() => ping("Opens the upcoming-renewals Power BI report")}>
+          Renewals ↗
+        </button>
+        <div className="rail-sec">Admin</div>
+        <button className={`rail-btn ${view.page === "admin" ? "on" : ""}`} onClick={() => setView({ page: "admin" })}>
+          Group mapping
+        </button>
+        <div className="rail-foot">Reference data synced nightly from the data warehouse · last sync 02:10 UTC</div>
+      </nav>
+
+      {/* ------- main ------- */}
+      <div className="main">
+        <div className="topbar">
+          <div className="search">
+            <input
+              placeholder="Search clients & brokers — try “GC”, “Alpine”, or a system name…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            {hits.length > 0 && (
+              <div className="search-pop">
+                {hits.map((x) => (
+                  <div key={x.key} className="search-row" onClick={() => openProfile(x.key)}>
+                    <span style={{ fontWeight: 600 }}>{x.display}</span>
+                    <span className="mono">{x.key}</span>
+                    <span className="chip">{x.type}</span>
+                    {x.origin === "Prospect" && <span className="badge prospect">Prospect</span>}
+                  </div>
+                ))}
+                <div className="search-hint">Matches display names, aliases and warehouse system names — clients and brokers</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="content">
+          {view.page === "home" && <Home groups={groups} actions={actions} tps={tps} g={g} onOpen={openProfile} />}
+          {view.page === "profile" && <Profile gk={view.key} g={g} contacts={contacts} tps={tps} actions={actions} notes={notes}
+            onOpen={openProfile} onLogTp={() => setShowTpForm(true)}
+            onAddNote={(b) => { setNotes([{ id: Date.now(), on: view.key, body: b, author: ME, date: today }, ...notes]); ping("Note added"); }}
+            onAddContact={(c) => { setContacts([...contacts, { ...c, id: Date.now(), org: view.key, status: "Active" }]); ping("Contact added"); }}
+            onToggleKey={(id) => setTps(tps.map((t) => t.id === id ? { ...t, key: !t.key } : t))}
+            onCompleteAction={(id) => { setActions(actions.map((a) => a.id === id ? { ...a, status: "Done" } : a)); ping("Action completed"); }} />}
+          {view.page === "actions" && <MyActions actions={actions} g={g} onOpen={openProfile}
+            onComplete={(id) => { setActions(actions.map((a) => a.id === id ? { ...a, status: "Done" } : a)); ping("Action completed"); }} />}
+          {view.page === "admin" && <Admin groups={groups} onConvert={() => ping("Conversion flow: pick the incoming synced group → records re-point")}
+            onRename={(key, name) => { setGroups(groups.map((x) => x.key === key ? { ...x, display: name } : x)); ping("Display name updated"); }} />}
+        </div>
+      </div>
+
+      {showTpForm && (
+        <TouchpointForm
+          groups={groups} contacts={contacts}
+          defaultClient={view.page === "profile" && g(view.key)?.type === "client" ? view.key : ""}
+          defaultBroker={view.page === "profile" && g(view.key)?.type === "broker" ? view.key : ""}
+          onClose={() => setShowTpForm(false)}
+          onSave={(tp, action) => {
+            const id = Date.now();
+            setTps([{ ...tp, id, author: ME }, ...tps]);
+            if (action) setActions((a) => [{ ...action, id: id + 1, status: "Open", client: tp.client, tp: id }, ...a]);
+            setShowTpForm(false);
+            ping(action ? "Touchpoint + follow-up saved" : "Touchpoint saved");
+          }}
+        />
+      )}
+
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* ---------------- home: unified client/broker list with toggle ---------------- */
+function Home({ groups, actions, tps, g, onOpen }) {
+  const [type, setType] = useState("client"); // clients are the default lens
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div className="eyebrow">Relationships</div>
+          <h1 className="h1">{type === "client" ? "Clients" : "Brokers"}</h1>
+        </div>
+        <div className="feed-filter">
+          <button className={type === "client" ? "on" : ""} onClick={() => setType("client")}>
+            Clients ({groups.filter((x) => x.type === "client").length})
+          </button>
+          <button className={type === "broker" ? "on" : ""} onClick={() => setType("broker")}>
+            Brokers ({groups.filter((x) => x.type === "broker").length})
+          </button>
+        </div>
+      </div>
+      <GroupList type={type} groups={groups} actions={actions} tps={tps} g={g} onOpen={onOpen} />
+    </>
+  );
+}
+
+/* ---------------- list view ---------------- */
+function GroupList({ type, groups, actions, tps, g, onOpen }) {
+  const rows = groups.filter((x) => x.type === type);
+  return (
+    <div className="card">
+        <table className="tbl">
+          <thead><tr>
+            <th>Group</th><th>Key</th>{type === "client" && <th>Segment</th>}{type === "client" && <th>Lead</th>}
+            <th>Region</th><th>Last touchpoint</th><th>Open actions</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((x) => {
+              const last = tps.filter((t) => t.client === x.key || t.broker === x.key).sort((a, b) => b.date.localeCompare(a.date))[0];
+              const open = actions.filter((a) => a.client === x.key && a.status === "Open").length;
+              return (
+                <tr key={x.key} className="click" onClick={() => onOpen(x.key)}>
+                  <td>
+                    <span className="linkish">{x.display}</span>{" "}
+                    {x.origin === "Prospect" && <span className="badge prospect">Prospect</span>}
+                  </td>
+                  <td><span className="mono">{x.key}</span></td>
+                  {type === "client" && <td>{x.segment}</td>}
+                  {type === "client" && <td>{x.lead}</td>}
+                  <td>{x.region}</td>
+                  <td>{last ? `${fmt(last.date)} · ${last.type}` : <span style={{ color: "#A6ADB9" }}>—</span>}</td>
+                  <td>{open > 0 ? open : <span style={{ color: "#A6ADB9" }}>—</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+    </div>
+  );
+}
+
+/* ---------------- profile (the hub) ---------------- */
+function Profile({ gk, g, contacts, tps, actions, notes, onOpen, onAddNote, onCompleteAction, onToggleKey, onAddContact, onLogTp }) {
+  const grp = g(gk);
+  const [tab, setTab] = useState("touchpoints");
+  const [noteDraft, setNoteDraft] = useState("");
+  const [feedFilter, setFeedFilter] = useState("all"); // all | key
+  if (!grp) return null;
+  const isClient = grp.type === "client";
+  const myTps = tps.filter((t) => t.client === gk || t.broker === gk)
+    .filter((t) => feedFilter === "all" || t.key)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const keyCount = tps.filter((t) => (t.client === gk || t.broker === gk) && t.key).length;
+  const myContacts = contacts.filter((c) => c.org === gk);
+  const myActions = actions.filter((a) => a.client === gk);
+  const myNotes = notes.filter((n) => n.on === gk);
+
+  return (
+    <>
+      <div className={`slip ${grp.origin === "Prospect" ? "prospect" : ""}`}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <h1 className="h1">{grp.display}</h1>
+          <span className="mono">{grp.key}</span>
+          {grp.origin === "Prospect"
+            ? <span className="badge prospect">Prospect — not yet in warehouse</span>
+            : <span className="badge synced">Synced</span>}
+          <button className="btn primary" style={{ marginLeft: "auto" }} onClick={onLogTp}>
+            + Log touchpoint
+          </button>
+        </div>
+        {grp.origin === "Synced" && <div className="mono" style={{ marginTop: 4 }}>System name: {grp.system}</div>}
+        <div className="slip-grid">
+          {isClient && <div><div className="slip-k">Segment</div><div className="slip-v">{grp.segment}</div></div>}
+          {isClient && <div><div className="slip-k">Client lead</div><div className="slip-v">{grp.lead}</div></div>}
+          {isClient && <div><div className="slip-k">Relationship status</div><div className="slip-v">{grp.relStatus}</div></div>}
+          <div><div className="slip-k">Region</div><div className="slip-v">{grp.region}</div></div>
+          {isClient && grp.brokers?.length > 0 && (
+            <div style={{ gridColumn: "span 2" }}>
+              <div className="slip-k">Brokers on account</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                {grp.brokers.map((bk) => (
+                  <button key={bk} className="btn sm" onClick={() => onOpen(bk)}>{g(bk)?.display}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="tabs">
+        {["touchpoints", "contacts", "actions", "notes", "treaty detail"].map((t) => (
+          <button key={t} className={`tab ${tab === t ? "on" : ""}`} onClick={() => setTab(t)}>
+            {t === "treaty detail" ? "Treaty / program detail" : t[0].toUpperCase() + t.slice(1)}
+            {t === "actions" && myActions.filter((a) => a.status === "Open").length > 0 && ` (${myActions.filter((a) => a.status === "Open").length})`}
+          </button>
+        ))}
+      </div>
+
+      {tab === "touchpoints" && (
+        <div className="card">
+          <div className="card-h">
+            <span className="card-t">Touchpoints</span>
+            <div className="feed-filter">
+              <button className={feedFilter === "all" ? "on" : ""} onClick={() => setFeedFilter("all")}>All</button>
+              <button className={feedFilter === "key" ? "on" : ""} onClick={() => setFeedFilter("key")}>★ Key only{keyCount ? ` (${keyCount})` : ""}</button>
+            </div>
+          </div>
+          {myTps.length === 0 && (
+            <div className="empty">
+              {feedFilter === "key"
+                ? "No key touchpoints yet. Star the ones a successor on this account would need to read."
+                : "No touchpoints yet. Log the first one — it takes under a minute."}
+            </div>
+          )}
+          {myTps.map((t) => (
+            <div className="tp" key={t.id}>
+              <div className={`tp-rail ${t.type === "Renewal discussion" ? "renewal" : t.type === "Executive interaction" ? "exec" : ""}`} />
+              <div style={{ flex: 1 }}>
+                <div className="tp-type">{fmt(t.date)} · {t.type.toUpperCase()} · {t.internal.join(", ")}</div>
+                <div className="tp-sub">{t.subject}</div>
+                {t.summary && <div className="tp-body">{t.summary}</div>}
+                <div className="tp-meta">
+                  {t.client !== gk && <span className="chip">@ {g(t.client)?.display}</span>}
+                  {t.broker && t.broker !== gk && <span className="chip">via {g(t.broker)?.display}</span>}
+                  {t.external.map((id) => { const c = contacts.find((x) => x.id === id); return c ? <span className="chip" key={id}>{c.name}</span> : null; })}
+                  {t.lob.map((l) => <span className="chip" key={l}>{l}</span>)}
+                  {t.progRef && <span className="chip">{t.progRef}</span>}
+                  {t.topics.map((x) => <span className="chip" key={x}>#{x}</span>)}
+                </div>
+              </div>
+              <button className={`star ${t.key ? "on" : ""}`} title={t.key ? "Unmark key touchpoint" : "Mark as key touchpoint — anyone can, any time"}
+                onClick={() => onToggleKey(t.id)}>★</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "contacts" && (
+        <ContactsTab contacts={myContacts} onAdd={onAddContact} />
+      )}
+
+      {tab === "actions" && (
+        <div className="card">
+          <table className="tbl">
+            <thead><tr><th>Next step</th><th>Owner</th><th>Due</th><th>Priority</th><th></th></tr></thead>
+            <tbody>
+              {myActions.length === 0 && <tr><td colSpan={5}><div className="empty">No follow-ups. That's fine — they're optional.</div></td></tr>}
+              {myActions.map((a) => (
+                <tr key={a.id} style={a.status === "Done" ? { opacity: 0.45 } : {}}>
+                  <td style={{ fontWeight: 600 }}>{a.desc}</td><td>{a.owner}</td>
+                  <td>{a.due && a.due < today && a.status === "Open" ? <span className="badge overdue">{fmt(a.due)}</span> : fmt(a.due)}</td>
+                  <td><span className="chip">{a.priority}</span></td>
+                  <td>{a.status === "Open" ? <button className="btn sm" onClick={() => onCompleteAction(a.id)}>Mark done</button> : <span className="badge status">Done</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === "notes" && (
+        <div className="card">
+          <div style={{ padding: 16, borderBottom: "1px solid var(--line-soft)", display: "flex", gap: 10 }}>
+            <input style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", font: "inherit" }}
+              placeholder="Add a note… use @ to mention a client or broker"
+              value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && noteDraft.trim()) { onAddNote(noteDraft.trim()); setNoteDraft(""); } }} />
+            <button className="btn" onClick={() => { if (noteDraft.trim()) { onAddNote(noteDraft.trim()); setNoteDraft(""); } }}>Add note</button>
+          </div>
+          {myNotes.length === 0 && <div className="empty">No notes yet.</div>}
+          {myNotes.map((n) => (
+            <div key={n.id} style={{ padding: "13px 18px", borderBottom: "1px solid var(--line-soft)" }}>
+              <div className="tp-type">{fmt(n.date)} · {n.author}</div>
+              <div style={{ marginTop: 4, lineHeight: 1.5 }}>{n.body}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === "treaty detail" && (
+        grp.origin === "Prospect" ? (
+          <div className="pbi"><b>No bound business yet.</b><br />Treaty detail appears here automatically once {grp.display} converts to a synced group.</div>
+        ) : (
+          <div className="pbi">
+            <b>Embedded Power BI report (v2)</b><br />
+            Treaty &amp; program detail, upcoming renewals, underwriters — rendered from the existing warehouse report, no data duplicated in the CRM.
+            <span className="mono">URL filter: ?{isClient ? "client_group_id" : "broker_group_id"}={grp.key}</span>
+            <div style={{ marginTop: 14 }}><button className="btn">Open report in Power BI ↗</button></div>
+          </div>
+        )
+      )}
+    </>
+  );
+}
+
+/* ---------------- contacts tab with add-contact ---------------- */
+function ContactsTab({ contacts, onAdd }) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
+  const [role, setRole] = useState("Buyer");
+  const [keyBuyer, setKeyBuyer] = useState(false);
+  const [cNotes, setCNotes] = useState("");
+
+  const reset = () => { setName(""); setTitle(""); setRole("Buyer"); setKeyBuyer(false); setCNotes(""); setAdding(false); };
+  const sorted = [...contacts].sort((a, b) => (b.keyBuyer ? 1 : 0) - (a.keyBuyer ? 1 : 0));
+
+  return (
+    <div className="card">
+      <div className="card-h">
+        <span className="card-t">Contacts</span>
+        <button className="btn sm" onClick={() => setAdding(!adding)}>{adding ? "Cancel" : "+ Add contact"}</button>
+      </div>
+      {adding && (
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line-soft)", display: "flex", flexDirection: "column", gap: 12, background: "var(--paper)" }}>
+          <div className="f-row">
+            <div className="f"><label>Full name</label>
+              <input autoFocus placeholder="First Last" value={name} onChange={(e) => setName(e.target.value)} /></div>
+            <div className="f"><label>Job title <span className="opt">optional</span></label>
+              <input placeholder="e.g. Head of Ceded Reinsurance" value={title} onChange={(e) => setTitle(e.target.value)} /></div>
+          </div>
+          <div className="f-row">
+            <div className="f"><label>Role</label>
+              <select value={role} onChange={(e) => setRole(e.target.value)}>
+                {ROLE_ORDER.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="f"><label>Buying decision maker?</label>
+              <div className="seg">
+                <button className={keyBuyer ? "on" : ""} onClick={() => setKeyBuyer(true)}>★ Yes — drives the purchase</button>
+                <button className={!keyBuyer ? "on" : ""} onClick={() => setKeyBuyer(false)}>No</button>
+              </div>
+            </div>
+          </div>
+          <div className="f"><label>Notes <span className="opt">optional — anything worth knowing about this person</span></label>
+            <textarea rows={2} placeholder="e.g. Prefers structure options in writing before meetings…" value={cNotes} onChange={(e) => setCNotes(e.target.value)} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button className="btn primary" disabled={!name.trim()} style={!name.trim() ? { opacity: 0.45 } : {}}
+              onClick={() => { if (name.trim()) { onAdd({ name: name.trim(), title, role, keyBuyer, notes: cNotes.trim() }); reset(); } }}>
+              Save contact
+            </button>
+          </div>
+        </div>
+      )}
+      <table className="tbl">
+        <thead><tr><th></th><th>Name</th><th>Title</th><th>Role</th><th>Notes</th><th>Status</th></tr></thead>
+        <tbody>
+          {sorted.length === 0 && <tr><td colSpan={6}><div className="empty">No contacts yet — add the buyer first.</div></td></tr>}
+          {sorted.map((c) => (
+            <tr key={c.id}>
+              <td style={{ width: 28, paddingRight: 0 }} title={c.keyBuyer ? "Buying decision maker" : ""}>
+                {c.keyBuyer && <span style={{ color: "#C9A86A", fontSize: 15 }}>★</span>}
+              </td>
+              <td style={{ fontWeight: 600 }}>{c.name}</td>
+              <td>{c.title}</td>
+              <td><span className="chip">{c.role}</span></td>
+              <td style={{ color: "var(--ink-soft)", fontSize: 12.5, maxWidth: 260 }}>{c.notes || <span style={{ color: "#C8C4B8" }}>—</span>}</td>
+              <td><span className="badge status">{c.status}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ---------------- my actions ---------------- */
+function MyActions({ actions, g, onOpen, onComplete }) {
+  const mine = actions.filter((a) => a.owner === ME)
+    .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
+  return (
+    <>
+      <div className="eyebrow">Workspace</div>
+      <h1 className="h1" style={{ marginBottom: 18 }}>My actions</h1>
+      <div className="card">
+        <table className="tbl">
+          <thead><tr><th>Next step</th><th>Client / broker</th><th>Due</th><th>Priority</th><th></th></tr></thead>
+          <tbody>
+            {mine.map((a) => (
+              <tr key={a.id} style={a.status === "Done" ? { opacity: 0.45 } : {}}>
+                <td style={{ fontWeight: 600 }}>{a.desc}</td>
+                <td><span className="linkish" onClick={() => onOpen(a.client)}>{g(a.client)?.display}</span></td>
+                <td>{a.due && a.due < today && a.status === "Open" ? <span className="badge overdue">Overdue · {fmt(a.due)}</span> : fmt(a.due)}</td>
+                <td><span className="chip">{a.priority}</span></td>
+                <td>{a.status === "Open" ? <button className="btn sm" onClick={() => onComplete(a.id)}>Mark done</button> : <span className="badge status">Done</span>}</td>
+              </tr>
+            ))}
+            {mine.length === 0 && <tr><td colSpan={5}><div className="empty">Nothing on your plate.</div></td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/* ---------------- admin: mapping table ---------------- */
+function Admin({ groups, onRename, onConvert }) {
+  const [editing, setEditing] = useState(null);
+  const [draft, setDraft] = useState("");
+  return (
+    <>
+      <div className="eyebrow">Admin</div>
+      <h1 className="h1">Group mapping</h1>
+      <p style={{ color: "var(--ink-soft)", maxWidth: 640, lineHeight: 1.55 }}>
+        Synced groups arrive nightly from the warehouse — edit their display names and aliases here.
+        Prospects are created here too, and converted once they appear in the warehouse.
+      </p>
+      <div style={{ marginBottom: 14 }}><button className="btn primary" onClick={() => onConvert()}>+ New prospect</button></div>
+      <div className="card">
+        <table className="tbl">
+          <thead><tr><th>Key</th><th>Origin</th><th>System name (warehouse)</th><th>Display name</th><th>Aliases</th><th></th></tr></thead>
+          <tbody>
+            {groups.map((x) => (
+              <tr key={x.key}>
+                <td><span className="mono">{x.key}</span></td>
+                <td>{x.origin === "Prospect" ? <span className="badge prospect">Prospect</span> : <span className="badge synced">Synced</span>}</td>
+                <td style={{ color: "var(--ink-soft)", fontSize: 12.5 }}>{x.system}</td>
+                <td>
+                  {editing === x.key ? (
+                    <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { onRename(x.key, draft); setEditing(null); } }}
+                      style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "4px 8px", font: "inherit" }} />
+                  ) : <span style={{ fontWeight: 600 }}>{x.display}</span>}
+                </td>
+                <td>{x.aliases.map((a) => <span className="chip" key={a} style={{ marginRight: 4 }}>{a}</span>)}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  {editing === x.key
+                    ? <button className="btn sm" onClick={() => { onRename(x.key, draft); setEditing(null); }}>Save</button>
+                    : <button className="btn sm" onClick={() => { setEditing(x.key); setDraft(x.display); }}>Rename</button>}
+                  {x.origin === "Prospect" && <button className="btn sm" style={{ marginLeft: 6 }} onClick={onConvert}>Convert…</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/* ---------------- external attendee picker ----------------
+   Decision makers (★) are the default chips — one tap for the common case.
+   Everyone else sits behind "+ Others" so long contact lists never clutter the form. */
+function ExternalAttendeePicker({ contacts, selected, onToggle }) {
+  const [showOthers, setShowOthers] = useState(false);
+  const buyers = contacts.filter((c) => c.keyBuyer);
+  const others = contacts.filter((c) => !c.keyBuyer);
+  // Selected non-buyers stay visible even when the expander is closed
+  const visible = [...buyers, ...others.filter((c) => showOthers || selected.includes(c.id))];
+
+  return (
+    <div className="seg">
+      {visible.map((c) => (
+        <button key={c.id} className={selected.includes(c.id) ? "on" : ""} onClick={() => onToggle(c.id)}>
+          {c.keyBuyer && "★ "}{c.name} · {c.role.replace("Broker – ", "")}
+        </button>
+      ))}
+      {others.length > 0 && !showOthers && others.some((c) => !selected.includes(c.id)) && (
+        <button style={{ color: "var(--ink-soft)" }} onClick={() => setShowOthers(true)}>
+          + Others ({others.filter((c) => !selected.includes(c.id)).length})
+        </button>
+      )}
+      <button style={{ borderStyle: "dashed", color: "#A6ADB9" }} onClick={() => {}}>+ New contact…</button>
+    </div>
+  );
+}
+
+/* ---------------- @typeahead for internal people ----------------
+   Matches last name, first name, or initials. Keyboard: ↑↓ + Enter.
+   `single` mode = exactly one person (used for action Owner).
+   Same component pattern is reusable for @entity mentions in notes. */
+function InternalTypeahead({ selected, onChange, single = false, placeholder }) {
+  const [q, setQ] = useState("");
+  const [hl, setHl] = useState(0);
+  const term = q.replace(/^@/, "").trim().toLowerCase();
+  const matches = term
+    ? DIRECTORY.filter((u) => !selected.includes(u.name)).filter((u) => {
+        const [last, first] = u.label.toLowerCase().split(", ");
+        const initials = (first[0] + last[0]);
+        return last.startsWith(term) || first.startsWith(term) ||
+               u.label.toLowerCase().includes(term) || initials.startsWith(term.replace(/\W/g, ""));
+      }).slice(0, 5)
+    : [];
+
+  const pick = (u) => { onChange(single ? [u.name] : [...selected, u.name]); setQ(""); setHl(0); };
+  const showInput = !single || selected.length === 0;
+
+  return (
+    <div className="ta">
+      <div className="ta-selected">
+        {selected.map((name) => {
+          const u = DIRECTORY.find((d) => d.name === name);
+          return (
+            <span className="ta-chip" key={name}>
+              {u ? u.label : name}{name === ME ? " (you)" : ""}
+              <button onClick={() => onChange(selected.filter((n) => n !== name))} aria-label={`Remove ${name}`}>×</button>
+            </span>
+          );
+        })}
+      </div>
+      {showInput && (
+        <input
+          placeholder={placeholder || "@bra → Brandt, Klaus…"}
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setHl(0); }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") { e.preventDefault(); setHl(Math.min(hl + 1, matches.length - 1)); }
+            if (e.key === "ArrowUp") { e.preventDefault(); setHl(Math.max(hl - 1, 0)); }
+            if (e.key === "Enter" && matches[hl]) { e.preventDefault(); pick(matches[hl]); }
+            if (e.key === "Backspace" && !q && selected.length) onChange(selected.slice(0, -1));
+          }}
+          style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", font: "inherit", outline: "none" }}
+        />
+      )}
+      {showInput && matches.length > 0 && (
+        <div className="ta-pop">
+          {matches.map((u, i) => (
+            <div key={u.name} className={`ta-row ${i === hl ? "hl" : ""}`}
+              onMouseEnter={() => setHl(i)} onClick={() => pick(u)}>
+              <span style={{ fontWeight: 600 }}>{u.label}</span>
+              <span className="mono">↵ to {single ? "assign" : "add"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- the <60s touchpoint form ---------------- */
+function TouchpointForm({ groups, contacts, defaultClient, defaultBroker, onClose, onSave }) {
+  const [type, setType] = useState("Meeting");
+  const [date, setDate] = useState(today);
+  const [client, setClient] = useState(defaultClient || "");
+  const [broker, setBroker] = useState(defaultBroker || "");
+  const [subject, setSubject] = useState("");
+  const [summary, setSummary] = useState("");
+  const [lob, setLob] = useState([]);
+  const [topics, setTopics] = useState([]);
+  const [ext, setExt] = useState([]);
+  const [internal, setInternal] = useState([ME]); // author pre-selected — zero clicks for the common case
+  const [withFollowUp, setWithFollowUp] = useState(false);
+  const [isKey, setIsKey] = useState(false);
+  const [fuDesc, setFuDesc] = useState("");
+  const [fuDue, setFuDue] = useState("");
+  const [fuOwner, setFuOwner] = useState(ME);          // defaults to author — zero clicks
+  const [fuPriority, setFuPriority] = useState("Medium"); // defaults silently to Medium
+
+  const clients = groups.filter((x) => x.type === "client");
+  const brokers = groups.filter((x) => x.type === "broker");
+  const clientContacts = contacts.filter((c) => c.org === client || c.org === broker);
+  const valid = subject.trim() && (client || broker);
+
+  const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+
+  return (
+    <div className="scrim" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal">
+        <div className="modal-h">
+          <div className="eyebrow">New touchpoint</div>
+          <h2 className="h1" style={{ fontSize: 21 }}>Log it before the next meeting starts</h2>
+        </div>
+        <div className="modal-b">
+          <div className="f"><label>Type</label>
+            <div className="seg">{TP_TYPES.map((t) => <button key={t} className={type === t ? "on" : ""} onClick={() => setType(t)}>{t}</button>)}</div>
+          </div>
+          <div className="f-row">
+            <div className="f"><label>Client group <span className="opt">{defaultBroker ? "optional for broker-only touchpoints" : ""}</span></label>
+              <select value={client} onChange={(e) => setClient(e.target.value)}>
+                <option value="">{defaultBroker ? "— none (broker market touchpoint) —" : "— select —"}</option>
+                {clients.map((c) => <option key={c.key} value={c.key}>{c.display}{c.origin === "Prospect" ? "  (prospect)" : ""}</option>)}
+              </select>
+            </div>
+            <div className="f"><label>Broker group <span className="opt">{defaultBroker ? "" : "optional"}</span></label>
+              <select value={broker} onChange={(e) => setBroker(e.target.value)}>
+                <option value="">—</option>
+                {brokers.map((b) => <option key={b.key} value={b.key}>{b.display}</option>)}
+              </select>
+            </div>
+            <div className="f" style={{ maxWidth: 150 }}><label>Date</label>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+          </div>
+          <div className="f"><label>Subject</label>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input style={{ flex: 1 }} placeholder="e.g. 1/1 renewal positioning" value={subject} onChange={(e) => setSubject(e.target.value)} />
+              <button className={`star ${isKey ? "on" : ""}`} title="Mark as key touchpoint (optional — can also be starred later by anyone)"
+                onClick={() => setIsKey(!isKey)} style={{ fontSize: 21 }}>★</button>
+            </div>
+          </div>
+          <div className="f"><label>Summary <span className="opt">optional</span></label>
+            <textarea rows={3} placeholder="What was discussed, what was agreed…" value={summary} onChange={(e) => setSummary(e.target.value)} />
+          </div>
+          {clientContacts.length > 0 && (
+            <div className="f"><label>External attendees <span className="opt">decision makers shown first · optional</span></label>
+              <ExternalAttendeePicker contacts={clientContacts} selected={ext} onToggle={(id) => toggle(ext, setExt, id)} />
+            </div>
+          )}
+          <div className="f"><label>Internal attendees <span className="opt">type @ then a few letters — last name, first name, or initials</span></label>
+            <InternalTypeahead selected={internal} onChange={setInternal} />
+          </div>
+          <div className="f-row">
+            <div className="f"><label>Line of business <span className="opt">optional</span></label>
+              <div className="seg">{LOBS.slice(0, 5).map((l) => <button key={l} className={lob.includes(l) ? "on" : ""} onClick={() => toggle(lob, setLob, l)}>{l}</button>)}</div>
+            </div>
+          </div>
+          <div className="f"><label>Topic tags <span className="opt">optional</span></label>
+            <div className="seg">{TOPICS.slice(0, 6).map((t) => <button key={t} className={topics.includes(t) ? "on" : ""} onClick={() => toggle(topics, setTopics, t)}>#{t}</button>)}</div>
+          </div>
+
+          <div className="note-banner">
+            Follow-up is <b>optional</b> — save without one any time.{" "}
+            <button className="btn sm" style={{ marginLeft: 6 }} onClick={() => setWithFollowUp(!withFollowUp)}>
+              {withFollowUp ? "Remove follow-up" : "+ Add a follow-up"}
+            </button>
+          </div>
+          {withFollowUp && (
+            <>
+              <div className="f-row">
+                <div className="f" style={{ flex: 2 }}><label>Next step</label>
+                  <input placeholder="One sentence is enough" value={fuDesc} onChange={(e) => setFuDesc(e.target.value)} />
+                </div>
+                <div className="f" style={{ maxWidth: 150 }}><label>Due <span className="opt">optional</span></label>
+                  <input type="date" value={fuDue} onChange={(e) => setFuDue(e.target.value)} />
+                </div>
+              </div>
+              <div className="f-row">
+                <div className="f"><label>Owner <span className="opt">defaults to you — remove the chip and type @ to reassign</span></label>
+                  <InternalTypeahead
+                    single
+                    selected={fuOwner ? [fuOwner] : []}
+                    onChange={(arr) => setFuOwner(arr[0] || "")}
+                    placeholder="@oka → Okafor, Jide…"
+                  />
+                </div>
+                <div className="f" style={{ maxWidth: 170 }}><label>Priority</label>
+                  <select value={fuPriority} onChange={(e) => setFuPriority(e.target.value)}>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn primary" disabled={!valid} style={!valid ? { opacity: 0.45, cursor: "not-allowed" } : {}}
+              onClick={() => valid && onSave(
+                { type, date, key: isKey, client: client || null, broker: broker || null, lob, progRef: "", subject, summary, external: ext, internal: internal.length ? internal : [ME], topics, regions: [] },
+                withFollowUp && fuDesc.trim() ? { desc: fuDesc.trim(), owner: fuOwner || ME, due: fuDue || null, priority: fuPriority } : null
+              )}>
+              Save touchpoint
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
