@@ -120,6 +120,9 @@ const css = `
 .feed-filter { display:flex; gap:6px; align-items:center; }
 .feed-filter button { border:1px solid var(--line); background:#fff; border-radius:99px; padding:4px 11px; font:inherit; font-size:12px; cursor:pointer; color:var(--ink-soft); }
 .feed-filter button.on { background:var(--ink); border-color:var(--ink); color:#fff; }
+.nt-tag { color: var(--accent); font-weight: 600; }
+.nt-mention { color: var(--ink); font-weight: 700; background: var(--line-soft); border-radius: 4px; padding: 0 3px; }
+.nt-converted { font-size: 11px; color: var(--ok); background: var(--ok-bg); border-radius: 99px; padding: 2px 9px; font-weight: 600; }
 
 /* ---- tabs ---- */
 .tabs { display:flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 22px 0 18px; }
@@ -199,7 +202,8 @@ const seedActions = [
 ];
 
 const seedNotes = [
-  { id: 1, on: "CG-104", body: "Group strategy: consolidating panel to fewer, larger partners over next two renewals — strong opportunity to grow signed lines. @Calder Re aligned.", author: "S. Verma", date: "2026-05-23" },
+  { id: 1, on: "CG-104", body: "Group strategy: consolidating panel to fewer, larger partners over next two renewals — strong opportunity to grow signed lines. @Calder Re aligned. #Renewal strategy", tokens: ["@Calder Re", "#Renewal strategy"], author: "S. Verma", date: "2026-05-23", convertedTo: null },
+  { id: 2, on: "CG-219", body: "Conference corridor intel: hearing Meridian may market part of their casualty book to new partners at 1/1. No meeting — just keeping it on the radar. #Casualty trends", tokens: ["#Casualty trends"], author: "J. Okafor", date: "2026-06-06", convertedTo: null },
 ];
 
 const TP_TYPES = ["Meeting", "Call", "Email", "Event", "Renewal discussion", "Executive interaction"];
@@ -235,6 +239,7 @@ function App() {
   const [view, setView] = useState({ page: "home", key: null });
   const [q, setQ] = useState("");
   const [showTpForm, setShowTpForm] = useState(false);
+  const [tpPrefill, setTpPrefill] = useState(null); // { summary, date, fromNoteId } when converting a quick note
   const [toast, setToast] = useState(null);
 
   const g = (key) => groups.find((x) => x.key === key);
@@ -307,8 +312,9 @@ function App() {
         <div className="content">
           {view.page === "home" && <Home groups={groups} actions={actions} tps={tps} g={g} onOpen={openProfile} />}
           {view.page === "profile" && <Profile gk={view.key} g={g} contacts={contacts} tps={tps} actions={actions} notes={notes}
-            onOpen={openProfile} onLogTp={() => setShowTpForm(true)}
-            onAddNote={(b) => { setNotes([{ id: Date.now(), on: view.key, body: b, author: ME, date: today }, ...notes]); ping("Note added"); }}
+            onOpen={openProfile} onLogTp={() => { setTpPrefill(null); setShowTpForm(true); }}
+            onAddNote={(b, tokens) => { setNotes([{ id: Date.now(), on: view.key, body: b, tokens: tokens || [], author: ME, date: today, convertedTo: null }, ...notes]); ping("Quick note added"); }}
+            onConvertNote={(n) => { setTpPrefill({ summary: n.body, date: n.date, fromNoteId: n.id }); setShowTpForm(true); }}
             onAddContact={(c) => { setContacts([...contacts, { ...c, id: Date.now(), org: view.key, status: "Active" }]); ping("Contact added"); }}
             onToggleKey={(id) => setTps(tps.map((t) => t.id === id ? { ...t, key: !t.key } : t))}
             onCompleteAction={(id) => { setActions(actions.map((a) => a.id === id ? { ...a, status: "Done" } : a)); ping("Action completed"); }} />}
@@ -324,13 +330,15 @@ function App() {
           groups={groups} contacts={contacts}
           defaultClient={view.page === "profile" && g(view.key)?.type === "client" ? view.key : ""}
           defaultBroker={view.page === "profile" && g(view.key)?.type === "broker" ? view.key : ""}
-          onClose={() => setShowTpForm(false)}
+          prefill={tpPrefill}
+          onClose={() => { setShowTpForm(false); setTpPrefill(null); }}
           onSave={(tp, action) => {
             const id = Date.now();
             setTps([{ ...tp, id, author: ME }, ...tps]);
             if (action) setActions((a) => [{ ...action, id: id + 1, status: "Open", client: tp.client, tp: id }, ...a]);
-            setShowTpForm(false);
-            ping(action ? "Touchpoint + follow-up saved" : "Touchpoint saved");
+            if (tpPrefill?.fromNoteId) setNotes((ns) => ns.map((n) => n.id === tpPrefill.fromNoteId ? { ...n, convertedTo: id } : n));
+            setShowTpForm(false); setTpPrefill(null);
+            ping(tpPrefill?.fromNoteId ? "Note converted to touchpoint" : action ? "Touchpoint + follow-up saved" : "Touchpoint saved");
           }}
         />
       )}
@@ -400,10 +408,9 @@ function GroupList({ type, groups, actions, tps, g, onOpen }) {
 }
 
 /* ---------------- profile (the hub) ---------------- */
-function Profile({ gk, g, contacts, tps, actions, notes, onOpen, onAddNote, onCompleteAction, onToggleKey, onAddContact, onLogTp }) {
+function Profile({ gk, g, contacts, tps, actions, notes, onOpen, onAddNote, onCompleteAction, onToggleKey, onAddContact, onLogTp, onConvertNote }) {
   const grp = g(gk);
   const [tab, setTab] = useState("touchpoints");
-  const [noteDraft, setNoteDraft] = useState("");
   const [feedFilter, setFeedFilter] = useState("all"); // all | key
   if (!grp) return null;
   const isClient = grp.type === "client";
@@ -448,7 +455,7 @@ function Profile({ gk, g, contacts, tps, actions, notes, onOpen, onAddNote, onCo
       </div>
 
       <div className="tabs">
-        {["touchpoints", "contacts", "actions", "notes", "treaty detail"].map((t) => (
+        {["touchpoints", "contacts", "actions", "quick notes", "treaty detail"].map((t) => (
           <button key={t} className={`tab ${tab === t ? "on" : ""}`} onClick={() => setTab(t)}>
             {t === "treaty detail" ? "Treaty / program detail" : t[0].toUpperCase() + t.slice(1)}
             {t === "actions" && myActions.filter((a) => a.status === "Open").length > 0 && ` (${myActions.filter((a) => a.status === "Open").length})`}
@@ -518,23 +525,9 @@ function Profile({ gk, g, contacts, tps, actions, notes, onOpen, onAddNote, onCo
         </div>
       )}
 
-      {tab === "notes" && (
-        <div className="card">
-          <div style={{ padding: 16, borderBottom: "1px solid var(--line-soft)", display: "flex", gap: 10 }}>
-            <input style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", font: "inherit" }}
-              placeholder="Add a note… use @ to mention a client or broker"
-              value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && noteDraft.trim()) { onAddNote(noteDraft.trim()); setNoteDraft(""); } }} />
-            <button className="btn" onClick={() => { if (noteDraft.trim()) { onAddNote(noteDraft.trim()); setNoteDraft(""); } }}>Add note</button>
-          </div>
-          {myNotes.length === 0 && <div className="empty">No notes yet.</div>}
-          {myNotes.map((n) => (
-            <div key={n.id} style={{ padding: "13px 18px", borderBottom: "1px solid var(--line-soft)" }}>
-              <div className="tp-type">{fmt(n.date)} · {n.author}</div>
-              <div style={{ marginTop: 4, lineHeight: 1.5 }}>{n.body}</div>
-            </div>
-          ))}
-        </div>
+      {tab === "quick notes" && (
+        <QuickNotes notes={myNotes} contacts={contacts.filter((c) => c.org === gk)} g={g}
+          onAdd={onAddNote} onConvert={onConvertNote} />
       )}
 
       {tab === "treaty detail" && (
@@ -550,6 +543,100 @@ function Profile({ gk, g, contacts, tps, actions, notes, onOpen, onAddNote, onCo
         )
       )}
     </>
+  );
+}
+
+/* ---------------- quick notes ----------------
+   Capture lane: zero required structure. @ mentions (contacts, colleagues,
+   clients/brokers) and # topic tags are inline-only. "Convert to touchpoint"
+   is an offer, never a prompt — general notes are complete records as-is. */
+function QuickNotes({ notes, contacts, g, onAdd, onConvert }) {
+  const [text, setText] = useState("");
+  const [picked, setPicked] = useState([]);
+  const [hl, setHl] = useState(0);
+
+  // current trigger token: @ or # followed by word characters at the end of input
+  const m = text.match(/([@#])([\w]*)$/);
+  const trigger = m ? m[1] : null;
+  const partial = m ? m[2].toLowerCase() : "";
+  let suggestions = [];
+  if (trigger === "#") {
+    suggestions = TOPICS.filter((t) => t.toLowerCase().startsWith(partial)).slice(0, 5).map((t) => ({ label: t, insert: "#" + t }));
+  } else if (trigger === "@") {
+    const people = contacts.map((c) => ({ label: `${c.name} (contact)`, insert: "@" + c.name }));
+    const staff = DIRECTORY.map((u) => ({ label: `${u.label} (colleague)`, insert: "@" + u.label }));
+    suggestions = [...people, ...staff]
+      .filter((s) => s.label.toLowerCase().includes(partial)).slice(0, 5);
+  }
+
+  const pick = (s) => {
+    setText(text.replace(/([@#])([\w]*)$/, s.insert + " "));
+    setPicked([...picked, s.insert]);
+    setHl(0);
+  };
+
+  const save = () => {
+    if (!text.trim()) return;
+    onAdd(text.trim(), picked.filter((p) => text.includes(p)));
+    setText(""); setPicked([]);
+  };
+
+  const renderBody = (n) => {
+    const tokens = (n.tokens || []).filter(Boolean);
+    if (!tokens.length) return n.body;
+    const re = new RegExp("(" + tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "g");
+    return n.body.split(re).map((part, i) =>
+      tokens.includes(part)
+        ? <span key={i} className={part.startsWith("#") ? "nt-tag" : "nt-mention"}>{part}</span>
+        : part
+    );
+  };
+
+  return (
+    <div className="card">
+      <div style={{ padding: 16, borderBottom: "1px solid var(--line-soft)" }}>
+        <div className="ta">
+          <div style={{ display: "flex", gap: 10 }}>
+            <input style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", font: "inherit", outline: "none" }}
+              placeholder="Jot it now, structure it later — @ to mention people or entities, # for topics"
+              value={text} onChange={(e) => { setText(e.target.value); setHl(0); }}
+              onKeyDown={(e) => {
+                if (suggestions.length) {
+                  if (e.key === "ArrowDown") { e.preventDefault(); setHl(Math.min(hl + 1, suggestions.length - 1)); return; }
+                  if (e.key === "ArrowUp") { e.preventDefault(); setHl(Math.max(hl - 1, 0)); return; }
+                  if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pick(suggestions[hl]); return; }
+                }
+                if (e.key === "Enter") save();
+              }} />
+            <button className="btn" onClick={save}>Add</button>
+          </div>
+          {suggestions.length > 0 && (
+            <div className="ta-pop">
+              {suggestions.map((s, i) => (
+                <div key={s.insert + i} className={`ta-row ${i === hl ? "hl" : ""}`}
+                  onMouseEnter={() => setHl(i)} onClick={() => pick(s)}>
+                  <span style={{ fontWeight: 600 }}>{s.insert}</span>
+                  <span className="mono">{s.label.includes("(") ? s.label.match(/\((.*)\)/)[1] : "topic"}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {notes.length === 0 && <div className="empty">No quick notes yet. The fastest way to get something into the CRM — 15 seconds, no required fields.</div>}
+      {notes.map((n) => (
+        <div key={n.id} style={{ padding: "13px 18px", borderBottom: "1px solid var(--line-soft)", display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <div style={{ flex: 1 }}>
+            <div className="tp-type">{fmt(n.date)} · {n.author}</div>
+            <div style={{ marginTop: 4, lineHeight: 1.5 }}>{renderBody(n)}</div>
+          </div>
+          {n.convertedTo
+            ? <span className="nt-converted" title="This note was upgraded into a structured touchpoint">→ Touchpoint logged</span>
+            : <button className="btn sm" title="Optional — pre-fills the touchpoint form with this note. General notes are fine staying as notes."
+                onClick={() => onConvert(n)}>Convert to touchpoint</button>}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -789,13 +876,13 @@ function InternalTypeahead({ selected, onChange, single = false, placeholder }) 
 }
 
 /* ---------------- the <60s touchpoint form ---------------- */
-function TouchpointForm({ groups, contacts, defaultClient, defaultBroker, onClose, onSave }) {
+function TouchpointForm({ groups, contacts, defaultClient, defaultBroker, prefill, onClose, onSave }) {
   const [type, setType] = useState("Meeting");
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(prefill?.date || today);
   const [client, setClient] = useState(defaultClient || "");
   const [broker, setBroker] = useState(defaultBroker || "");
   const [subject, setSubject] = useState("");
-  const [summary, setSummary] = useState("");
+  const [summary, setSummary] = useState(prefill?.summary || "");
   const [lob, setLob] = useState([]);
   const [topics, setTopics] = useState([]);
   const [ext, setExt] = useState([]);
@@ -818,8 +905,8 @@ function TouchpointForm({ groups, contacts, defaultClient, defaultBroker, onClos
     <div className="scrim" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal">
         <div className="modal-h">
-          <div className="eyebrow">New touchpoint</div>
-          <h2 className="h1" style={{ fontSize: 21 }}>Log it before the next meeting starts</h2>
+          <div className="eyebrow">{prefill ? "Convert quick note → touchpoint" : "New touchpoint"}</div>
+          <h2 className="h1" style={{ fontSize: 21 }}>{prefill ? "Add the structure — the note did the capture" : "Log it before the next meeting starts"}</h2>
         </div>
         <div className="modal-b">
           <div className="f"><label>Type</label>
