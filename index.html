@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reinsurance CRM — POC</title>
+<title>TransRe CRM POC</title>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -260,7 +260,7 @@ function App() {
 
       {/* ------- left rail ------- */}
       <nav className="rail">
-        <div className="rail-brand">Cedar<span>·</span>Re CRM</div>
+        <div className="rail-brand">TransRe <span>CRM POC</span></div>
         <div className="rail-sec">Relationships</div>
         <button className={`rail-btn ${view.page === "home" ? "on" : ""}`} onClick={() => setView({ page: "home" })}>
           Clients &amp; brokers <span className="rail-count">{groups.length}</span>
