@@ -170,11 +170,11 @@ const css = `
 const seedGroups = [
   { key: "CG-104", origin: "Synced", type: "client", system: "ALPINE NATL INS GRP CONSOLIDATED", display: "Alpine National", aliases: ["ANIG", "Alpine"], region: "North America", segment: "Global", lead: "S. Verma", relStatus: "Active", brokers: ["BG-021", "BG-007"] },
   { key: "CG-219", origin: "Synced", type: "client", system: "MERIDIAN MUTUAL HOLDINGS GROUP", display: "Meridian Mutual", aliases: ["MMH"], region: "Continental Europe", segment: "Large National", lead: "J. Okafor", relStatus: "Active", brokers: ["BG-021"] },
-  { key: "CG-388", origin: "Synced", type: "client", system: "PACIFICA SEGUROS GROUP SA CONS", display: "Pacífica Seguros", aliases: ["Pacifica"], region: "LatAm", segment: "Regional", lead: "S. Verma", relStatus: "Dormant", brokers: ["BG-007"] },
+  { key: "CG-388", origin: "Synced", type: "client", system: "PACIFICA SEGUROS GROUP SA CONS", display: "Pacífica Seguros", aliases: ["Pacifica"], region: "LatAm", segment: "Regional", lead: null, relStatus: "Dormant", brokers: ["BG-007"] },
   { key: "P-0007", origin: "Prospect", type: "client", system: "—", display: "Korin Specialty", aliases: ["Korin"], region: "UK", segment: "Specialty", lead: "M. Chen", relStatus: "Prospect", brokers: ["BG-014"] },
-  { key: "BG-021", origin: "Synced", type: "broker", system: "CALDER RE BROKING INTL GROUP", display: "Calder Re", aliases: ["Calder"], region: "Global" },
-  { key: "BG-007", origin: "Synced", type: "broker", system: "NORTHGATE BROKING GROUP LTD", display: "Northgate", aliases: ["NG Broking"], region: "Global" },
-  { key: "BG-014", origin: "Prospect", type: "broker", system: "—", display: "Atlas Re Partners", aliases: ["Atlas"], region: "UK" },
+  { key: "BG-021", origin: "Synced", type: "broker", system: "CALDER RE BROKING INTL GROUP", display: "Calder Re", aliases: ["Calder"], region: "Global", lead: "K. Brandt" },
+  { key: "BG-007", origin: "Synced", type: "broker", system: "NORTHGATE BROKING GROUP LTD", display: "Northgate", aliases: ["NG Broking"], region: "Global", lead: null },
+  { key: "BG-014", origin: "Prospect", type: "broker", system: "—", display: "Atlas Re Partners", aliases: ["Atlas"], region: "UK", lead: null },
 ];
 
 const seedContacts = [
@@ -321,6 +321,7 @@ function App() {
           {view.page === "actions" && <MyActions actions={actions} g={g} onOpen={openProfile}
             onComplete={(id) => { setActions(actions.map((a) => a.id === id ? { ...a, status: "Done" } : a)); ping("Action completed"); }} />}
           {view.page === "admin" && <Admin groups={groups} onConvert={() => ping("Conversion flow: pick the incoming synced group → records re-point")}
+            onSetLead={(key, lead) => { setGroups(groups.map((x) => x.key === key ? { ...x, lead } : x)); ping(lead ? "Lead assigned" : "Lead unassigned"); }}
             onRename={(key, name) => { setGroups(groups.map((x) => x.key === key ? { ...x, display: name } : x)); ping("Display name updated"); }} />}
         </div>
       </div>
@@ -344,6 +345,36 @@ function App() {
       )}
 
       {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* ---------------- inline-editable lead field ----------------
+   NULL lead = "Unassigned" (a display state, not a magic value).
+   Edit uses the same single-select @typeahead as action Owner.
+   Editable by any user in v1; every change is audited in the real build. */
+function LeadField({ value, onSet }) {
+  const [editing, setEditing] = useState(false);
+  const label = value ? (DIRECTORY.find((d) => d.name === value)?.label || value) : null;
+
+  if (!editing) return (
+    <div className="slip-v" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      {label || <span style={{ color: "#A6ADB9", fontWeight: 500 }}>Unassigned</span>}
+      <button className="btn sm" style={{ fontWeight: 500 }} onClick={() => setEditing(true)}>
+        {value ? "Change" : "Assign"}
+      </button>
+    </div>
+  );
+
+  return (
+    <div style={{ minWidth: 230, display: "flex", flexDirection: "column", gap: 6 }}>
+      <InternalTypeahead
+        single
+        selected={value ? [value] : []}
+        onChange={(arr) => { onSet(arr[0] || null); if (arr[0]) setEditing(false); }}
+        placeholder="@name to assign…"
+      />
+      <button className="btn sm" style={{ alignSelf: "flex-start" }} onClick={() => setEditing(false)}>Done</button>
     </div>
   );
 }
@@ -394,7 +425,7 @@ function GroupList({ type, groups, actions, tps, g, onOpen }) {
                   </td>
                   <td><span className="mono">{x.key}</span></td>
                   {type === "client" && <td>{x.segment}</td>}
-                  {type === "client" && <td>{x.lead}</td>}
+                  {type === "client" && <td>{x.lead || <span style={{ color: "#A6ADB9" }}>Unassigned</span>}</td>}
                   <td>{x.region}</td>
                   <td>{last ? `${fmt(last.date)} · ${last.type}` : <span style={{ color: "#A6ADB9" }}>—</span>}</td>
                   <td>{open > 0 ? open : <span style={{ color: "#A6ADB9" }}>—</span>}</td>
@@ -438,7 +469,14 @@ function Profile({ gk, g, groups, contacts, tps, actions, notes, onOpen, onAddNo
         {grp.origin === "Synced" && <div className="mono" style={{ marginTop: 4 }}>System name: {grp.system}</div>}
         <div className="slip-grid">
           {isClient && <div><div className="slip-k">Segment</div><div className="slip-v">{grp.segment}</div></div>}
-          {isClient && <div><div className="slip-k">Client lead</div><div className="slip-v">{grp.lead}</div></div>}
+          <div>
+            <div className="slip-k">{isClient ? "Client lead" : "Relationship lead"}</div>
+            <div className="slip-v" title="Lead assignment is managed by Admin in Group mapping">
+              {grp.lead
+                ? (DIRECTORY.find((d) => d.name === grp.lead)?.label || grp.lead)
+                : <span style={{ color: "#A6ADB9", fontWeight: 500 }}>Unassigned</span>}
+            </div>
+          </div>
           {isClient && <div><div className="slip-k">Relationship status</div><div className="slip-v">{grp.relStatus}</div></div>}
           <div><div className="slip-k">Region</div><div className="slip-v">{grp.region}</div></div>
           {isClient && grp.brokers?.length > 0 && (
@@ -746,9 +784,12 @@ function MyActions({ actions, g, onOpen, onComplete }) {
 }
 
 /* ---------------- admin: mapping table ---------------- */
-function Admin({ groups, onRename, onConvert }) {
+function Admin({ groups, onRename, onConvert, onSetLead }) {
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState("");
+  const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const rows = unassignedOnly ? groups.filter((x) => !x.lead) : groups;
+  const unassignedCount = groups.filter((x) => !x.lead).length;
   return (
     <>
       <div className="eyebrow">Admin</div>
@@ -756,13 +797,23 @@ function Admin({ groups, onRename, onConvert }) {
       <p style={{ color: "var(--ink-soft)", maxWidth: 640, lineHeight: 1.55 }}>
         Synced groups arrive nightly from the warehouse — edit their display names and aliases here.
         Prospects are created here too, and converted once they appear in the warehouse.
+        Lead assignment is managed here (Admin only); leads come from the Entra ID staff directory.
       </p>
-      <div style={{ marginBottom: 14 }}><button className="btn primary" onClick={() => onConvert()}>+ New prospect</button></div>
+      <div style={{ marginBottom: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button className="btn primary" onClick={() => onConvert()}>+ New prospect</button>
+        <div className="feed-filter">
+          <button className={!unassignedOnly ? "on" : ""} onClick={() => setUnassignedOnly(false)}>All groups</button>
+          <button className={unassignedOnly ? "on" : ""} onClick={() => setUnassignedOnly(true)}>
+            Unassigned leads only ({unassignedCount})
+          </button>
+        </div>
+      </div>
       <div className="card">
         <table className="tbl">
-          <thead><tr><th>Key</th><th>Origin</th><th>System name (warehouse)</th><th>Display name</th><th>Aliases</th><th></th></tr></thead>
+          <thead><tr><th>Key</th><th>Origin</th><th>System name (warehouse)</th><th>Display name</th><th>Aliases</th><th>Lead</th><th></th></tr></thead>
           <tbody>
-            {groups.map((x) => (
+            {rows.length === 0 && <tr><td colSpan={7}><div className="empty">Every group has a lead assigned. Nice.</div></td></tr>}
+            {rows.map((x) => (
               <tr key={x.key}>
                 <td><span className="mono">{x.key}</span></td>
                 <td>{x.origin === "Prospect" ? <span className="badge prospect">Prospect</span> : <span className="badge synced">Synced</span>}</td>
@@ -775,6 +826,9 @@ function Admin({ groups, onRename, onConvert }) {
                   ) : <span style={{ fontWeight: 600 }}>{x.display}</span>}
                 </td>
                 <td>{x.aliases.map((a) => <span className="chip" key={a} style={{ marginRight: 4 }}>{a}</span>)}</td>
+                <td style={{ minWidth: 190 }}>
+                  <LeadField value={x.lead} onSet={(lead) => onSetLead(x.key, lead)} />
+                </td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   {editing === x.key
                     ? <button className="btn sm" onClick={() => { onRename(x.key, draft); setEditing(null); }}>Save</button>
